@@ -9,20 +9,17 @@ body {
 }
 
 .app-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   width: 100vw;
   height: 100vh;
+  position: relative; /* Нужно для позиционирования UI поверх Canvas */
 }
 
-.game-area {
-  position: relative;
-  width: 300px;
-  height: 500px;
-  background-color: #3f3f3f;
-  border-radius: 10px;
-  overflow: hidden;
+.app-container > canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* Это основание, на которое мы ставим первый блок */
@@ -45,33 +42,55 @@ body {
   background-color: #00bcd4; /* Яркий цвет, чтобы его было видно */
 }
 
+.ui-container {
+  position: relative; /* Или absolute, если app-container не relative */
+  z-index: 10;
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  flex-direction: column; /* Располагаем элементы в колонку */
+  align-items: center;    /* Центрируем по горизонтали */
+
+  /* Отключаем взаимодействие с этим контейнером,
+     чтобы клики проходили "сквозь" него на Canvas */
+  pointer-events: none;
+}
+
 .score-ui {
-  position: absolute;
-  top: 15%;
-  left: 50%;
-  transform: translateX(-50%);
+  /* --- ИЗМЕНЕНИЕ 3: Новые стили для счета --- */
+  width: 100%;
+  text-align: center;
+  /* Задаем отступ через flex-свойство или margin */
+  flex-basis: 15%; /* Говорим, что этот блок должен занять 15% высоты */
+  flex-shrink: 0;   /* Запрещаем ему сжиматься */
+
   color: white;
   font-size: 8em;
   font-family: 'Arial', sans-serif;
   font-weight: bold;
-  z-index: 10;
-
   text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.5);
-
   user-select: none;
 }
+.score-ui p {
+  margin: 0; /* Убираем стандартный отступ у параграфа */
+  padding: 0;
+}
+
 .game-over-ui {
-  position: absolute;
+  position: absolute; /* Возвращаем ему абсолютное позиционирование */
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: white;
   background-color: rgba(0, 0, 0, 0.7);
   padding: 20px;
   border-radius: 10px;
   text-align: center;
   font-family: sans-serif;
-  cursor: pointer; /* Добавим курсор-руку, чтобы было понятно, что можно кликнуть */
+  cursor: pointer;
+
+  /* Включаем обратно взаимодействие для этого конкретного блока */
+  pointer-events: all;
 }
 
 /* Стили для нашей картинки */
