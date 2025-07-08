@@ -81,18 +81,8 @@ function Game() {
 
   return (
     <div className="app-container">
-      <div className="ui-container">
-        <div className="score-ui">
-          <p>{score}</p>
-        </div>
-
-        {gameState === 'gameOver' && (
-          <div className="game-over-ui" onClick={placeBlock}>
-            <img src={gameOverImage} alt="Game Over" className="game-over-image" />
-            <p>Ваш счет: {score}</p>
-            <p>Кликните, чтобы начать заново</p>
-          </div>
-        )}
+      <div className="score-ui">
+        <p>{score}</p>
       </div>
       <Canvas shadows camera={{ position: [0, 5, 8], fov: 75 }}>
         <GameCamera towerHeight={towerHeight} />
