@@ -46,13 +46,23 @@ function Game() {
   const [gameState, setGameState] = useState('playing');
   const activeBlockPositionRef = useRef(new THREE.Vector3());
 
-  // --- ИЗМЕНЕНИЕ 2: Переименовываем функцию ---
+  const clickCooldown = useRef(false);
+
   const placeBlock = () => {
+    if (clickCooldown.current) {
+      return; // Если задержка активна, ничего не делаем
+    }
     if (gameState !== 'playing') {
       setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
       setGameState('playing');
       return;
     }
+
+    clickCooldown.current = true;
+
+    setTimeout(() => {
+      clickCooldown.current = false;
+    }, 100); // 100 миллисекунд
 
     const prevBlock = blocks[blocks.length - 1];
     const newBlock = {
