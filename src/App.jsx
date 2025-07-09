@@ -104,25 +104,43 @@ function Game() {
   const activeBlockPositionRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
-    const loader = document.getElementById('loader');
-    if (loader) {
-      loader.classList.add('hidden');
-    }
+        const loader = document.getElementById('loader');
+        if (loader) {
+            loader.classList.add('hidden');
+        }
 
-    if (window.Telegram && window.Telegram.WebApp) {
-      const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
-      if (tgUser) {
-        setUser({
-          id: tgUser.id,
-          username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним'
-        });
-      } else {
-        setUser({ id: 12345, username: 'Anonim (not from TG)' });
-      }
-    } else {
-      setUser({ id: 12345, username: 'Anonim (not from TG)' });
-    }
-  }, []);
+        const setupTelegramUser = () => {
+            if (window.Telegram && window.Telegram.WebApp) {
+                // Вызываем ready() - это скажет Telegram, что мы готовы
+                window.Telegram.WebApp.ready();
+
+                const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
+                if (tgUser && tgUser.id) {
+                    setUser({
+                        id: tgUser.id,
+                        username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним'
+                    });
+                } else {
+                    // Если мы в Telegram, но не смогли получить user.id - это странно, но лучше иметь запасной вариант
+                    console.warn("In Telegram env, but user data is missing.");
+                    setUser({ id: 12345, username: 'Тестовый Игрок' });
+                }
+            } else {
+                // Для тестирования в обычном браузере
+                console.log("Not in Telegram env. Using test user.");
+                setUser({ id: 12345, username: 'Тестовый Игрок' });
+            }
+        };
+
+        // Иногда Telegram-объект появляется с небольшой задержкой.
+        // Мы попробуем его найти сразу, а если не получится - через 100мс.
+        if (window.Telegram && window.Telegram.WebApp) {
+            setupTelegramUser();
+        } else {
+            setTimeout(setupTelegramUser, 100);
+        }
+
+    }, []);
 
   const startGame = () => setGameState('playing');
   const pauseGame = () => setGameState('paused');
