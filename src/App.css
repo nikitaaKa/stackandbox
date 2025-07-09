@@ -11,15 +11,16 @@ body {
 .app-container {
   width: 100vw;
   height: 100vh;
-  position: relative; /* Нужно для позиционирования UI поверх Canvas */
+  /* position: relative; не обязательно, но пусть будет */
 }
 
-.app-container > canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+.game-area {
+  position: relative;
+  width: 300px;
+  height: 500px;
+  background-color: #3f3f3f;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 /* Это основание, на которое мы ставим первый блок */
@@ -42,29 +43,13 @@ body {
   background-color: #00bcd4; /* Яркий цвет, чтобы его было видно */
 }
 
-.ui-container {
-  position: relative; /* Или absolute, если app-container не relative */
-  z-index: 10;
-  width: 100%;
-  height: 100%;
-
-  display: flex;
-  flex-direction: column; /* Располагаем элементы в колонку */
-  align-items: center;    /* Центрируем по горизонтали */
-
-  /* Отключаем взаимодействие с этим контейнером,
-     чтобы клики проходили "сквозь" него на Canvas */
-  pointer-events: none;
-}
-
 .score-ui {
-  /* --- ИЗМЕНЕНИЕ 3: Новые стили для счета --- */
-  width: 100%;
-  text-align: center;
-  /* Задаем отступ через flex-свойство или margin */
-  flex-basis: 15%; /* Говорим, что этот блок должен занять 15% высоты */
-  flex-shrink: 0;   /* Запрещаем ему сжиматься */
+  position: absolute; /* Позиционируем абсолютно относительно .app-container */
+  top: 15%;          /* Отступ 15% от ВЕРХА контейнера */
+  left: 50%;
+  transform: translate(-50%, -50%); /* Центрируем. Y-трансформация нужна, чтобы текст был по центру своей линии */
 
+  z-index: 10;
   color: white;
   font-size: 8em;
   font-family: 'Arial', sans-serif;
@@ -72,25 +57,25 @@ body {
   text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.5);
   user-select: none;
 }
+
 .score-ui p {
-  margin: 0; /* Убираем стандартный отступ у параграфа */
-  padding: 0;
+    margin: 0;
+    padding: 0;
 }
 
 .game-over-ui {
-  position: absolute; /* Возвращаем ему абсолютное позиционирование */
+  position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  z-index: 10; /* Убедимся, что он тоже поверх всего */
+
   background-color: rgba(0, 0, 0, 0.7);
   padding: 20px;
   border-radius: 10px;
   text-align: center;
   font-family: sans-serif;
   cursor: pointer;
-
-  /* Включаем обратно взаимодействие для этого конкретного блока */
-  pointer-events: all;
 }
 
 /* Стили для нашей картинки */
