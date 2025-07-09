@@ -97,3 +97,84 @@ body {
     transform: rotate(14deg);
   }
 }
+
+.ui-fullscreen-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20; /* Поверх всего */
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-family: sans-serif;
+}
+
+.menu-logo {
+  width: 80%;
+  max-width: 300px;
+  margin-bottom: 20px;
+}
+
+.menu-buttons {
+  display: flex;
+  gap: 10px; /* Расстояние между кнопками */
+}
+
+.menu-buttons-column {
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Можно сделать отступ чуть меньше */
+    align-items: center;
+}
+
+.menu-button {
+  width: 180px; /* ИЗМЕНЕНИЕ: делаем кнопки шире (было 60px) */
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.menu-button:hover {
+  transform: scale(1.05); /* Можно уменьшить эффект увеличения */
+}
+
+/* Стили для "неактивных" кнопок */
+.menu-button.disabled, .menu-settings-button.disabled {
+  filter: grayscale(80%) brightness(0.7);
+  cursor: not-allowed;
+}
+.menu-button.disabled:hover {
+    transform: scale(1);
+}
+
+
+.menu-settings-button {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  cursor: pointer;
+}
+
+.pause-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 50px;
+  z-index: 10;
+  cursor: pointer;
+}
+
+.text-button {
+    background: #4a4a4a;
+    border: none;
+    color: white;
+    padding: 15px 30px;
+    font-size: 1.2em;
+    border-radius: 10px;
+    cursor: pointer;
+}
