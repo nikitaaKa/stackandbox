@@ -1,10 +1,10 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import './App.css';
 import * as THREE from 'three';
+import { supabase } from './supabaseClient'; // Импортируем наш клиент Supabase
 
 // --- ИМПОРТ ИЗОБРАЖЕНИЙ ---
-// Убедитесь, что все эти файлы лежат в папке src/assets
 import logoImage from './assets/stackbox_logo.png';
 import playButtonImage from './assets/stackbox_btn_play.png';
 import shopButtonImage from './assets/stackbox_btn_shop.png';
@@ -46,32 +46,47 @@ function Block({ position, size, color, isActive, onPositionUpdate }) {
 
 // --- КОМПОНЕНТЫ ИНТЕРФЕЙСА ---
 
-function MainMenu({ onPlay }) {
+function MainMenu({ onPlay, onShowLeaderboard }) {
   return (
     <div className="ui-fullscreen-menu">
       <img src={logoImage} alt="StackBox Logo" className="menu-logo" />
-      {/* ИЗМЕНЕНИЕ: меняем класс с 'menu-buttons' на 'menu-buttons-column' */}
       <div className="menu-buttons-column">
         <img src={playButtonImage} alt="Play" onClick={onPlay} className="menu-button" />
         <img src={shopButtonImage} alt="Shop" className="menu-button disabled" />
         <img src={friendsButtonImage} alt="Friends" className="menu-button disabled" />
-        <img src={leaderboardButtonImage} alt="Leaderboard" className="menu-button disabled" />
+        <img src={leaderboardButtonImage} alt="Leaderboard" onClick={onShowLeaderboard} className="menu-button" />
       </div>
       <img src={settingsButtonImage} alt="Settings" className="menu-settings-button disabled" />
     </div>
   );
 }
 
-function PauseMenu({ onResume, onRestart, onGoToMenu }) { // Добавляем новый пропс onGoToMenu
+function PauseMenu({ onResume, onRestart, onGoToMenu }) {
   return (
     <div className="ui-fullscreen-menu">
       <h2>Пауза</h2>
       <div className="menu-buttons-column">
         <button onClick={onResume} className="text-button">Продолжить</button>
         <button onClick={onRestart} className="text-button">Начать заново</button>
-        {/* ИЗМЕНЕНИЕ: Добавляем новую кнопку */}
         <button onClick={onGoToMenu} className="text-button secondary">В меню</button>
       </div>
+    </div>
+  );
+}
+
+function Leaderboard({ onBack, scores }) {
+  return (
+    <div className="ui-fullscreen-menu">
+      <h2>Таблица рекордов</h2>
+      <div className="leaderboard-list">
+        {scores.length > 0 ? scores.map((entry, index) => (
+          <div key={entry.user_id} className="leaderboard-entry">
+            <span>{index + 1}. {entry.username}</span>
+            <span>{entry.score}</span>
+          </div>
+        )) : <p>Загрузка...</p>}
+      </div>
+      <button onClick={onBack} className="text-button">Назад</button>
     </div>
   );
 }
@@ -79,25 +94,83 @@ function PauseMenu({ onResume, onRestart, onGoToMenu }) { // Добавляем 
 // --- ГЛАВНЫЙ КОМПОНЕНТ ИГРЫ ---
 
 function Game() {
-  const [gameState, setGameState] = useState('menu'); // 'menu', 'playing', 'paused', 'gameOver'
+  const [gameState, setGameState] = useState('menu'); // 'menu', 'playing', 'paused', 'leaderboard', 'gameOver'
+  const [user, setUser] = useState(null);
+  const [scores, setScores] = useState([]);
   const [blocks, setBlocks] = useState([
     { position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' },
   ]);
   const clickCooldown = useRef(false);
   const activeBlockPositionRef = useRef(new THREE.Vector3());
 
+  useEffect(() => {
+    const loader = document.getElementById('loader');
+    if (loader) {
+      loader.classList.add('hidden');
+    }
+
+    if (window.Telegram && window.Telegram.WebApp) {
+      const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
+      if (tgUser) {
+        setUser({
+          id: tgUser.id,
+          username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним'
+        });
+      } else {
+        setUser({ id: 12345, username: 'Anonim (not from TG)' });
+      }
+    } else {
+      setUser({ id: 12345, username: 'Anonim (not from TG)' });
+    }
+  }, []);
+
   const startGame = () => setGameState('playing');
   const pauseGame = () => setGameState('paused');
   const resumeGame = () => setGameState('playing');
+
   const restartGame = () => {
     setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
     setGameState('playing');
   };
+
   const goToMenu = () => {
     setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
     setGameState('menu');
   };
-  const gameOver = () => setGameState('gameOver');
+
+  const showLeaderboard = async () => {
+    setScores([]); // Очищаем старые результаты перед загрузкой
+    setGameState('leaderboard');
+    const { data, error } = await supabase
+      .from('scores')
+      .select('user_id, username, score')
+      .order('score', { ascending: false })
+      .limit(100);
+
+    if (data) {
+      setScores(data);
+    } else {
+      console.error('Error fetching scores:', error);
+    }
+  };
+
+  const gameOver = async () => {
+    setGameState('gameOver');
+    if (!user) return;
+
+    const currentScore = blocks.length - 1;
+    if (currentScore <= 0) return;
+
+    const { error } = await supabase.rpc('update_score_if_higher', {
+      new_user_id: user.id,
+      new_username: user.username,
+      new_score: currentScore
+    });
+
+    if (error) {
+      console.error('Error updating score:', error);
+    }
+  };
 
   const placeBlock = () => {
     if (clickCooldown.current || gameState !== 'playing') return;
@@ -131,8 +204,9 @@ function Game() {
   return (
     <div className="app-container">
       {/* Условный рендеринг интерфейса */}
-      {gameState === 'menu' && <MainMenu onPlay={startGame} />}
+      {gameState === 'menu' && <MainMenu onPlay={startGame} onShowLeaderboard={showLeaderboard} />}
       {gameState === 'paused' && <PauseMenu onResume={resumeGame} onRestart={restartGame} onGoToMenu={goToMenu} />}
+      {gameState === 'leaderboard' && <Leaderboard onBack={goToMenu} scores={scores} />}
       {gameState === 'gameOver' && (
         <div className="game-over-ui" onClick={restartGame}>
           <img src={gameOverImage} alt="Game Over" className="game-over-image" />

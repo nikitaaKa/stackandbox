@@ -178,3 +178,60 @@ body {
     border-radius: 10px;
     cursor: pointer;
 }
+
+.loader-container {
+  position: fixed; /* Фиксируем поверх всего */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #242424; /* Такой же фон, как у игры */
+  z-index: 9999; /* Высший z-index, чтобы быть поверх всего */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.5s ease; /* Плавное исчезновение */
+}
+
+/* Класс для скрытия лоадера */
+.loader-container.hidden {
+  opacity: 0;
+  pointer-events: none; /* Отключаем взаимодействие с невидимым элементом */
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #444;
+  border-top-color: #fff; /* Цвет вращающейся части */
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.leaderboard-list {
+    width: 90%;
+    max-width: 350px;
+    height: 60%;
+    overflow-y: auto;
+    background: rgba(0,0,0,0.2);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 20px;
+}
+
+.leaderboard-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 1.1em;
+    border-bottom: 1px solid #444;
+}
+.leaderboard-entry:last-child {
+    border-bottom: none;
+}
