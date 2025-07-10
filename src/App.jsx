@@ -98,98 +98,77 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
 
   useEffect(() => {
     const fetchFriendships = async () => {
-      if (!user) return;
+      if (!user || !user.user_id) return;
       setLoading(true);
-
-      // Запрос на входящие заявки
+      
       const { data: requestsData } = await supabase
         .from('friendships')
         .select(`*, user1:scores!user1_id(username)`)
-        .eq('user2_id', user.id)
+        .eq('user2_id', user.user_id)
         .eq('status', 'pending');
 
-      // Запрос на подтвержденных друзей
       const { data: friendsData } = await supabase
         .from('friendships')
         .select(`*, user1:scores!user1_id(username, user_id), user2:scores!user2_id(username, user_id)`)
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .or(`user1_id.eq.${user.user_id},user2_id.eq.${user.user_id}`)
         .eq('status', 'accepted');
 
       setFriendships({
         requests: requestsData || [],
-        friends: (friendsData || []).map(f => f.user1_id === user.id ? f.user2 : f.user1),
+        friends: (friendsData || []).map(f => f.user1_id === user.user_id ? f.user2 : f.user1),
       });
       setLoading(false);
     };
+
     fetchFriendships();
   }, [user]);
 
   const handleAddFriend = async () => {
     if (!friendCodeInput.trim()) return;
-
-    // Находим пользователя по коду дружбы
-    const { data: friendData, error } = await supabase
-      .from('scores')
-      .select('user_id')
-      .eq('friend_code', friendCodeInput.trim().toUpperCase())
-      .single();
-
-    if (error || !friendData) {
+    const { data: friendData } = await supabase.from('scores').select('user_id').eq('friend_code', friendCodeInput.trim().toUpperCase()).single();
+    if (!friendData) {
       alert('Пользователь с таким кодом не найден.');
       return;
     }
-
-    if (friendData.user_id === user.id) {
+    if (friendData.user_id === user.user_id) {
         alert('Нельзя добавить себя в друзья.');
         return;
     }
-
-    // Создаем заявку
-    const { error: insertError } = await supabase
-      .from('friendships')
-      .insert({ user1_id: user.user_id, user2_id: friendData.user_id, status: 'pending' });
-
-
-    if (insertError) {
+    const { error } = await supabase.from('friendships').insert({ user1_id: user.user_id, user2_id: friendData.user_id, status: 'pending' });
+    if (error) {
       alert('Не удалось отправить заявку. Возможно, она уже отправлена.');
     } else {
       alert('Заявка в друзья отправлена!');
       setFriendCodeInput('');
     }
   };
-
-  const handleRequest = async (friendshipId, newStatus) => {
-    await supabase.from('friendships').update({ status: newStatus }).eq('id', friendshipId);
-    // Обновляем список
-    const newRequests = friendships.requests.filter(req => req.id !== friendshipId);
-    setFriendships(prev => ({ ...prev, requests: newRequests }));
+  
+  const handleRequest = async (req, newStatus) => {
+    await supabase.from('friendships').update({ status: newStatus }).eq('id', req.id);
+    const newRequests = friendships.requests.filter(r => r.id !== req.id);
+    if (newStatus === 'accepted') {
+        const newFriend = req.user1;
+        setFriendships(prev => ({ requests: newRequests, friends: [...prev.friends, newFriend] }));
+    } else {
+        setFriendships(prev => ({ ...prev, requests: newRequests }));
+    }
   };
 
   return (
     <div className="ui-fullscreen-menu">
       <h2>Друзья</h2>
       <div className="leaderboard-list">
-        {/* Мой код */}
         <div className="friend-section">
           <h4>Мой код дружбы:</h4>
-          <p className="friend-code">{user?.friend_code || 'Загрузка...'}</p>
+          <p className="friend-code" onClick={() => navigator.clipboard.writeText(user?.friend_code)}>{user?.friend_code || 'Загрузка...'}</p>
         </div>
-
-        {/* Добавить друга */}
         <div className="friend-section">
           <h4>Добавить по коду:</h4>
           <div className="input-group">
-            <input
-              type="text"
-              value={friendCodeInput}
-              onChange={(e) => setFriendCodeInput(e.target.value)}
-              placeholder="ABC-DEF"
-            />
+            <input type="text" value={friendCodeInput} onChange={(e) => setFriendCodeInput(e.target.value)} placeholder="ABC-DEF" />
             <button onClick={handleAddFriend} className="text-button small">Ок</button>
           </div>
         </div>
-
-        {/* Входящие заявки */}
         <div className="friend-section">
           <h4>Входящие заявки:</h4>
           {loading ? <p>Загрузка...</p> : friendships.requests.length > 0 ? (
@@ -197,15 +176,13 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
               <div key={req.id} className="friend-entry">
                 <span>{req.user1.username}</span>
                 <div>
-                  <button onClick={() => handleRequest(req.id, 'accepted')} className="text-button small">✓</button>
-                  <button onClick={() => handleRequest(req.id, 'declined')} className="text-button small danger">×</button>
+                  <button onClick={() => handleRequest(req, 'accepted')} className="text-button small">✓</button>
+                  <button onClick={() => handleRequest(req, 'declined')} className="text-button small danger">×</button>
                 </div>
               </div>
             ))
           ) : <p>Нет новых заявок.</p>}
         </div>
-
-        {/* Мои друзья */}
         <div className="friend-section">
           <h4>Мои друзья:</h4>
            {loading ? <p>Загрузка...</p> : friendships.friends.length > 0 ? (
@@ -228,6 +205,7 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
 function Game() {
   const [gameState, setGameState] = useState('menu');
   const [user, setUser] = useState(null);
+  const [isUserLoading, setIsUserLoading] = useState(true);
   const [scores, setScores] = useState([]);
   const [activeSabotage, setActiveSabotage] = useState(null);
   const [blocks, setBlocks] = useState([
@@ -241,62 +219,46 @@ function Game() {
     if (loader) loader.classList.add('hidden');
 
     const initUser = async (tgUser) => {
-      // tgUser - это объект вида { id: TELEGRAM_ID, username: '...' }
-
-      // Проверяем, есть ли пользователь в нашей базе
-      let { data: userData, error } = await supabase
-        .from('scores')
-        .select('*')
-        .eq('user_id', tgUser.id) // Ищем по TELEGRAM_ID
-        .single();
-
-      // Если не нашли - создаем
-      if (error || !userData) {
-        const { data: code } = await supabase.rpc('generate_friend_code');
-        const { data: newUser } = await supabase
-          .from('scores')
-          .insert({ user_id: tgUser.id, username: tgUser.username, friend_code: code })
-          .select()
-          .single();
-        setUser(newUser); // Сохраняем нового пользователя
-      }
-        // Если нашли - проверяем, есть ли у него friend_code
-      else {
-        if (!userData.friend_code) {
-          const { data: code } = await supabase.rpc('generate_friend_code');
-          const { data: updatedUser } = await supabase
-            .from('scores')
-            .update({ friend_code: code })
-            .eq('user_id', tgUser.id)
-            .select()
-            .single();
-          setUser(updatedUser); // Сохраняем обновленного пользователя
+        let { data: userData } = await supabase.from('scores').select('*').eq('user_id', tgUser.id).single();
+        if (userData) {
+            if (!userData.friend_code) {
+                const { data: code } = await supabase.rpc('generate_friend_code');
+                if (code) {
+                    const { data: updatedUser } = await supabase.from('scores').update({ friend_code: code }).eq('user_id', tgUser.id).select().single();
+                    setUser(updatedUser);
+                } else {
+                    setUser(userData);
+                }
+            } else {
+                setUser(userData);
+            }
         } else {
-          setUser(userData); // Сохраняем найденного пользователя
+            const { data: code } = await supabase.rpc('generate_friend_code');
+            const { data: newUser } = await supabase.from('scores').insert({ user_id: tgUser.id, username: tgUser.username, friend_code: code }).select().single();
+            setUser(newUser);
         }
-      }
+        setIsUserLoading(false);
     };
 
-        const setupTelegramUser = () => {
+    const setupTelegramUser = () => {
       if (window.Telegram && window.Telegram.WebApp) {
         window.Telegram.WebApp.ready();
         const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
         if (tgUser && tgUser.id) {
-          const formattedUser = {
-            id: tgUser.id,
-            username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним'
-          };
+          const formattedUser = { id: tgUser.id, username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним' };
           initUser(formattedUser);
         } else {
-          setUser({ id: 12345, username: 'TEST', friend_code: '111111' });
+          setUser({ id: 12345, username: 'Тестовый Игрок', friend_code: 'TEST-CODE', user_id: 12345 });
+          setIsUserLoading(false);
         }
       } else {
-        setUser({ id: 12345, username: 'TEST', friend_code: '111111' });
+        setUser({ id: 12345, username: 'Тестовый Игрок', friend_code: 'TEST-CODE', user_id: 12345 });
+        setIsUserLoading(false);
       }
     };
 
-        setupTelegramUser();
-    }, []);
+    setupTelegramUser();
+  }, []);
 
   const checkForSabotage = async () => {
     if (!user) return;
@@ -405,7 +367,7 @@ function Game() {
       {gameState === 'menu' && <MainMenu onPlay={startGame} onShowLeaderboard={showLeaderboard} onShowFriends={showFriends} />}
       {gameState === 'paused' && <PauseMenu onResume={resumeGame} onRestart={restartGame} onGoToMenu={goToMenu} />}
       {gameState === 'leaderboard' && <Leaderboard onBack={goToMenu} scores={scores} />}
-      {gameState === 'friends' && <FriendsPage user={user} onBack={goToMenu} onSendSabotage={sendSabotage} />}
+      {gameState === 'friends' && !isUserLoading && <FriendsPage user={user} onBack={goToMenu} onSendSabotage={sendSabotage} />}
       {gameState === 'gameOver' && (
         <div className="game-over-ui" onClick={restartGame}>
           <img src={gameOverImage} alt="Game Over" className="game-over-image" />
