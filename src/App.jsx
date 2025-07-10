@@ -91,90 +91,148 @@ function Leaderboard({ onBack, scores }) {
   );
 }
 
+// src/App.jsx
+
+// ... (остальной код, MainMenu, PauseMenu и т.д.)
+
+// --- ФИНАЛЬНАЯ ВЕРСИЯ FriendsPage ---
 function FriendsPage({ user, onBack, onSendSabotage }) {
+  const [friendCodeInput, setFriendCodeInput] = useState('');
   const [friendships, setFriendships] = useState({ requests: [], friends: [] });
   const [loading, setLoading] = useState(true);
 
+  // Функция для обновления всех списков
+  const fetchAllFriendships = async () => {
+    if (!user || !user.user_id) return;
+    setLoading(true);
+
+    // Запрос на входящие заявки
+    const { data: requestsData } = await supabase
+      .from('friendships')
+      .select(`*, user1:scores!user1_id(username)`)
+      .eq('user2_id', user.user_id)
+      .eq('status', 'pending');
+
+    // Запрос на подтвержденных друзей
+    const { data: friendsData } = await supabase
+      .from('friendships')
+      .select(`*, user1:scores!user1_id(username, user_id), user2:scores!user2_id(username, user_id)`)
+      .or(`user1_id.eq.${user.user_id},user2_id.eq.${user.user_id}`)
+      .eq('status', 'accepted');
+
+    setFriendships({
+      requests: requestsData || [],
+      // Фильтруем и преобразуем данные, чтобы получить объекты именно друзей, а не себя
+      friends: (friendsData || []).map(f => (f.user1_id === user.user_id ? f.user2 : f.user1)),
+    });
+    setLoading(false);
+  };
+
+  // Загружаем данные при монтировании компонента
   useEffect(() => {
-    const debugFetchFriendships = async () => {
-      // --- ШАГ 1: ПРОВЕРЯЕМ, ЧТО ПРИШЛО В КОМПОНЕНТ ---
-      console.log('--- DEBUG START ---');
-      console.log('Получен пропс "user":', user);
-
-      if (!user || !user.user_id) {
-        console.error('Критическая ошибка: FriendsPage запущена без user.user_id. Рендеринг не должен был произойти.');
-        setLoading(false);
-        return;
-      }
-
-      // --- ШАГ 2: ПРОВЕРЯЕМ КОНКРЕТНОЕ ЗНАЧЕНИЕ ДЛЯ ЗАПРОСА ---
-      const userIdForQuery = user.user_id;
-      console.log('Значение, которое пойдет в запрос .eq():', userIdForQuery);
-      console.log('Тип этого значения:', typeof userIdForQuery);
-
-      if (typeof userIdForQuery !== 'number') {
-          console.error('Ошибка типа: user_id должен быть числом, а он - ' + typeof userIdForQuery);
-          setLoading(false);
-          return;
-      }
-
-      setLoading(true);
-
-      // --- ШАГ 3: ВЫПОЛНЯЕМ САМЫЙ ПРОСТОЙ ЗАПРОС К ТАБЛИЦЕ ---
-      // Это проверит, что имя таблицы правильное и RLS не блокирует чтение в принципе.
-      console.log('Попытка выполнить самый простой запрос к "friendships"');
-      const { data: testData, error: testError } = await supabase
-        .from('friendships')
-        .select('id')
-        .limit(1);
-
-      if (testError) {
-        console.error('ОШИБКА на самом простом запросе:', testError);
-        setLoading(false);
-        return;
-      }
-      console.log('Простой запрос успешен. Данные:', testData);
-
-
-      // --- ШАГ 4: ВЫПОЛНЯЕМ НАШ "ПРОБЛЕМНЫЙ" ЗАПРОС ---
-      console.log(`Попытка выполнить запрос с .eq('user2_id', ${userIdForQuery})`);
-      const { data: requestsData, error: requestsError } = await supabase
-        .from('friendships')
-        .select(`*, user1:scores!user1_id(username)`)
-        .eq('user2_id', userIdForQuery)
-        .eq('status', 'pending');
-
-      if (requestsError) {
-        console.error('ОШИБКА на финальном запросе заявок:', requestsError);
-      } else {
-        console.log('Финальный запрос заявок успешен! Полученные заявки:', requestsData);
-        setFriendships(prev => ({ ...prev, requests: requestsData || [] }));
-      }
-
-      // ... (здесь должна быть логика получения списка друзей, но пока сфокусируемся на заявках)
-
-      setLoading(false);
-      console.log('--- DEBUG END ---');
-    };
-
-    debugFetchFriendships();
+    fetchAllFriendships();
   }, [user]);
 
-  // JSX этого компонента пока не трогаем, он нам не важен
+  const handleAddFriend = async () => {
+    if (!friendCodeInput.trim()) return;
+
+    const { data: friendData } = await supabase
+      .from('scores')
+      .select('user_id')
+      .eq('friend_code', friendCodeInput.trim().toUpperCase())
+      .single();
+
+    if (!friendData) {
+      alert('Пользователь с таким кодом не найден.');
+      return;
+    }
+
+    if (friendData.user_id === user.user_id) {
+        alert('Нельзя добавить себя в друзья.');
+        return;
+    }
+
+    const { error } = await supabase
+      .from('friendships')
+      .insert({ user1_id: user.user_id, user2_id: friendData.user_id, status: 'pending' });
+
+    if (error) {
+      alert('Не удалось отправить заявку. Возможно, она уже отправлена или вы уже друзья.');
+    } else {
+      alert('Заявка в друзья отправлена!');
+      setFriendCodeInput('');
+    }
+  };
+
+  const handleRequest = async (req, newStatus) => {
+    await supabase.from('friendships').update({ status: newStatus }).eq('id', req.id);
+    // Обновляем списки после действия
+    fetchAllFriendships();
+  };
+
+  const copyCodeToClipboard = () => {
+    if (user?.friend_code) {
+        navigator.clipboard.writeText(user.friend_code)
+            .then(() => alert('Код скопирован!'))
+            .catch(err => console.error('Failed to copy: ', err));
+    }
+  };
+
   return (
     <div className="ui-fullscreen-menu">
-        <h2>Друзья (Режим отладки)</h2>
-        <div className="leaderboard-list">
-            <h4>Входящие заявки:</h4>
-            {loading ? <p>Загрузка...</p> : friendships.requests.length > 0 ? (
-                friendships.requests.map(req => (
-                    <div key={req.id} className="friend-entry">
-                        <span>{req.user1.username}</span>
-                    </div>
-                ))
-            ) : <p>Нет новых заявок.</p>}
+      <h2>Друзья</h2>
+      <div className="leaderboard-list">
+        {/* Мой код */}
+        <div className="friend-section">
+          <h4>Мой код дружбы (нажми, чтобы скопировать):</h4>
+          <p className="friend-code" onClick={copyCodeToClipboard}>{user?.friend_code || 'Загрузка...'}</p>
         </div>
-        <button onClick={onBack} className="text-button">Назад</button>
+
+        {/* Добавить друга */}
+        <div className="friend-section">
+          <h4>Добавить по коду:</h4>
+          <div className="input-group">
+            <input
+              type="text"
+              value={friendCodeInput}
+              onChange={(e) => setFriendCodeInput(e.target.value.toUpperCase())}
+              placeholder="ABC-DEF"
+              maxLength="7"
+            />
+            <button onClick={handleAddFriend} className="text-button small">Ок</button>
+          </div>
+        </div>
+
+        {/* Входящие заявки */}
+        <div className="friend-section">
+          <h4>Входящие заявки:</h4>
+          {loading ? <p>Загрузка...</p> : friendships.requests.length > 0 ? (
+            friendships.requests.map(req => (
+              <div key={req.id} className="friend-entry">
+                <span>{req.user1.username}</span>
+                <div>
+                  <button onClick={() => handleRequest(req, 'accepted')} className="text-button small">✓</button>
+                  <button onClick={() => handleRequest(req, 'declined')} className="text-button small danger">×</button>
+                </div>
+              </div>
+            ))
+          ) : <p>Нет новых заявок.</p>}
+        </div>
+
+        {/* Мои друзья */}
+        <div className="friend-section">
+          <h4>Мои друзья:</h4>
+           {loading ? <p>Загрузка...</p> : friendships.friends.length > 0 ? (
+            friendships.friends.map(friend => (
+              <div key={friend.user_id} className="friend-entry">
+                <span>{friend.username}</span>
+                <button onClick={() => onSendSabotage(friend.user_id)} className="text-button small">Подлянка</button>
+              </div>
+            ))
+          ) : <p>У вас пока нет друзей.</p>}
+        </div>
+      </div>
+      <button onClick={onBack} className="text-button">Назад</button>
     </div>
   );
 }
