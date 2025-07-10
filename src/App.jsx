@@ -147,7 +147,8 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
     // Создаем заявку
     const { error: insertError } = await supabase
       .from('friendships')
-      .insert({ user1_id: user.id, user2_id: friendData.user_id, status: 'pending' });
+      .insert({ user1_id: user.user_id, user2_id: friendData.user_id, status: 'pending' });
+
 
     if (insertError) {
       alert('Не удалось отправить заявку. Возможно, она уже отправлена.');
@@ -240,32 +241,43 @@ function Game() {
     if (loader) loader.classList.add('hidden');
 
     const initUser = async (tgUser) => {
-        // Проверяем, есть ли пользователь в нашей базе
-        let { data: userData } = await supabase.from('scores').select('*').eq('user_id', tgUser.id).single();
+      // tgUser - это объект вида { id: TELEGRAM_ID, username: '...' }
 
-        if (userData) {
-            // Если пользователь есть, но у него нет кода (старый игрок)
-            if (!userData.friend_code) {
-                const { data: code, error } = await supabase.rpc('generate_friend_code');
-                if (code) {
-                    const { data: updatedUser } = await supabase.from('scores').update({ friend_code: code }).eq('user_id', tgUser.id).select().single();
-                    userData = updatedUser;
-                }
-            }
+      // Проверяем, есть ли пользователь в нашей базе
+      let { data: userData, error } = await supabase
+        .from('scores')
+        .select('*')
+        .eq('user_id', tgUser.id) // Ищем по TELEGRAM_ID
+        .single();
+
+      // Если не нашли - создаем
+      if (error || !userData) {
+        const { data: code } = await supabase.rpc('generate_friend_code');
+        const { data: newUser } = await supabase
+          .from('scores')
+          .insert({ user_id: tgUser.id, username: tgUser.username, friend_code: code })
+          .select()
+          .single();
+        setUser(newUser); // Сохраняем нового пользователя
+      }
+        // Если нашли - проверяем, есть ли у него friend_code
+      else {
+        if (!userData.friend_code) {
+          const { data: code } = await supabase.rpc('generate_friend_code');
+          const { data: updatedUser } = await supabase
+            .from('scores')
+            .update({ friend_code: code })
+            .eq('user_id', tgUser.id)
+            .select()
+            .single();
+          setUser(updatedUser); // Сохраняем обновленного пользователя
         } else {
-            // Если пользователя нет, создаем его
-            const { data: code } = await supabase.rpc('generate_friend_code');
-            const { data: newUser } = await supabase.from('scores').insert({
-                user_id: tgUser.id,
-                username: tgUser.username,
-                friend_code: code
-            }).select().single();
-            userData = newUser;
+          setUser(userData); // Сохраняем найденного пользователя
         }
-        setUser(userData);
+      }
     };
 
-    const setupTelegramUser = () => {
+        const setupTelegramUser = () => {
       if (window.Telegram && window.Telegram.WebApp) {
         window.Telegram.WebApp.ready();
         const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
@@ -283,8 +295,8 @@ function Game() {
       }
     };
 
-    setupTelegramUser();
-  }, []);
+        setupTelegramUser();
+    }, []);
 
   const checkForSabotage = async () => {
     if (!user) return;
