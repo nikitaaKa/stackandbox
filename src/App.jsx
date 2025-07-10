@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import './App.css';
 import * as THREE from 'three';
-import { supabase } from './supabaseClient'; // Импортируем наш клиент Supabase
+import { supabase } from './supabaseClient';
 
 // --- ИМПОРТ ИЗОБРАЖЕНИЙ ---
 import logoImage from './assets/stackbox_logo.png';
@@ -27,12 +27,12 @@ function GameCamera({ towerHeight }) {
   return null;
 }
 
-function Block({ position, size, color, isActive, onPositionUpdate }) {
+function Block({ position, size, color, isActive, onPositionUpdate, speedMultiplier = 1 }) {
   const meshRef = useRef();
   useFrame((state) => {
     if (isActive) {
       const time = state.clock.getElapsedTime();
-      meshRef.current.position.x = Math.sin(time * 2) * 2.5;
+      meshRef.current.position.x = Math.sin(time * 2 * speedMultiplier) * 2.5;
       onPositionUpdate(meshRef.current.position);
     }
   });
@@ -46,14 +46,14 @@ function Block({ position, size, color, isActive, onPositionUpdate }) {
 
 // --- КОМПОНЕНТЫ ИНТЕРФЕЙСА ---
 
-function MainMenu({ onPlay, onShowLeaderboard }) {
+function MainMenu({ onPlay, onShowLeaderboard, onShowFriends }) {
   return (
     <div className="ui-fullscreen-menu">
       <img src={logoImage} alt="StackBox Logo" className="menu-logo" />
       <div className="menu-buttons-column">
         <img src={playButtonImage} alt="Play" onClick={onPlay} className="menu-button" />
         <img src={shopButtonImage} alt="Shop" className="menu-button disabled" />
-        <img src={friendsButtonImage} alt="Friends" className="menu-button disabled" />
+        <img src={friendsButtonImage} alt="Friends" onClick={onShowFriends} className="menu-button" />
         <img src={leaderboardButtonImage} alt="Leaderboard" onClick={onShowLeaderboard} className="menu-button" />
       </div>
       <img src={settingsButtonImage} alt="Settings" className="menu-settings-button disabled" />
@@ -91,12 +91,144 @@ function Leaderboard({ onBack, scores }) {
   );
 }
 
+function FriendsPage({ user, onBack, onSendSabotage }) {
+  const [friendCodeInput, setFriendCodeInput] = useState('');
+  const [friendships, setFriendships] = useState({ requests: [], friends: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchFriendships = async () => {
+      if (!user) return;
+      setLoading(true);
+
+      // Запрос на входящие заявки
+      const { data: requestsData } = await supabase
+        .from('friendships')
+        .select(`*, user1:scores!user1_id(username)`)
+        .eq('user2_id', user.id)
+        .eq('status', 'pending');
+
+      // Запрос на подтвержденных друзей
+      const { data: friendsData } = await supabase
+        .from('friendships')
+        .select(`*, user1:scores!user1_id(username, user_id), user2:scores!user2_id(username, user_id)`)
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .eq('status', 'accepted');
+
+      setFriendships({
+        requests: requestsData || [],
+        friends: (friendsData || []).map(f => f.user1_id === user.id ? f.user2 : f.user1),
+      });
+      setLoading(false);
+    };
+    fetchFriendships();
+  }, [user]);
+
+  const handleAddFriend = async () => {
+    if (!friendCodeInput.trim()) return;
+
+    // Находим пользователя по коду дружбы
+    const { data: friendData, error } = await supabase
+      .from('scores')
+      .select('user_id')
+      .eq('friend_code', friendCodeInput.trim().toUpperCase())
+      .single();
+
+    if (error || !friendData) {
+      alert('Пользователь с таким кодом не найден.');
+      return;
+    }
+
+    if (friendData.user_id === user.id) {
+        alert('Нельзя добавить себя в друзья.');
+        return;
+    }
+
+    // Создаем заявку
+    const { error: insertError } = await supabase
+      .from('friendships')
+      .insert({ user1_id: user.id, user2_id: friendData.user_id, status: 'pending' });
+
+    if (insertError) {
+      alert('Не удалось отправить заявку. Возможно, она уже отправлена.');
+    } else {
+      alert('Заявка в друзья отправлена!');
+      setFriendCodeInput('');
+    }
+  };
+
+  const handleRequest = async (friendshipId, newStatus) => {
+    await supabase.from('friendships').update({ status: newStatus }).eq('id', friendshipId);
+    // Обновляем список
+    const newRequests = friendships.requests.filter(req => req.id !== friendshipId);
+    setFriendships(prev => ({ ...prev, requests: newRequests }));
+  };
+
+  return (
+    <div className="ui-fullscreen-menu">
+      <h2>Друзья</h2>
+      <div className="leaderboard-list">
+        {/* Мой код */}
+        <div className="friend-section">
+          <h4>Мой код дружбы:</h4>
+          <p className="friend-code">{user?.friend_code || 'Загрузка...'}</p>
+        </div>
+
+        {/* Добавить друга */}
+        <div className="friend-section">
+          <h4>Добавить по коду:</h4>
+          <div className="input-group">
+            <input
+              type="text"
+              value={friendCodeInput}
+              onChange={(e) => setFriendCodeInput(e.target.value)}
+              placeholder="ABC-DEF"
+            />
+            <button onClick={handleAddFriend} className="text-button small">Ок</button>
+          </div>
+        </div>
+
+        {/* Входящие заявки */}
+        <div className="friend-section">
+          <h4>Входящие заявки:</h4>
+          {loading ? <p>Загрузка...</p> : friendships.requests.length > 0 ? (
+            friendships.requests.map(req => (
+              <div key={req.id} className="friend-entry">
+                <span>{req.user1.username}</span>
+                <div>
+                  <button onClick={() => handleRequest(req.id, 'accepted')} className="text-button small">✓</button>
+                  <button onClick={() => handleRequest(req.id, 'declined')} className="text-button small danger">×</button>
+                </div>
+              </div>
+            ))
+          ) : <p>Нет новых заявок.</p>}
+        </div>
+
+        {/* Мои друзья */}
+        <div className="friend-section">
+          <h4>Мои друзья:</h4>
+           {loading ? <p>Загрузка...</p> : friendships.friends.length > 0 ? (
+            friendships.friends.map(friend => (
+              <div key={friend.user_id} className="friend-entry">
+                <span>{friend.username}</span>
+                <button onClick={() => onSendSabotage(friend.user_id)} className="text-button small">Подлянка</button>
+              </div>
+            ))
+          ) : <p>У вас пока нет друзей.</p>}
+        </div>
+      </div>
+      <button onClick={onBack} className="text-button">Назад</button>
+    </div>
+  );
+}
+
 // --- ГЛАВНЫЙ КОМПОНЕНТ ИГРЫ ---
 
 function Game() {
-  const [gameState, setGameState] = useState('menu'); // 'menu', 'playing', 'paused', 'leaderboard', 'gameOver'
+  const [gameState, setGameState] = useState('menu');
   const [user, setUser] = useState(null);
   const [scores, setScores] = useState([]);
+  const [activeSabotage, setActiveSabotage] = useState(null);
   const [blocks, setBlocks] = useState([
     { position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' },
   ]);
@@ -104,52 +236,97 @@ function Game() {
   const activeBlockPositionRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
-        const loader = document.getElementById('loader');
-        if (loader) {
-            loader.classList.add('hidden');
-        }
+    const loader = document.getElementById('loader');
+    if (loader) loader.classList.add('hidden');
 
-        const setupTelegramUser = () => {
-            if (window.Telegram && window.Telegram.WebApp) {
-                // Вызываем ready() - это скажет Telegram, что мы готовы
-                window.Telegram.WebApp.ready();
+    const initUser = async (tgUser) => {
+        // Проверяем, есть ли пользователь в нашей базе
+        let { data: userData } = await supabase.from('scores').select('*').eq('user_id', tgUser.id).single();
 
-                const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
-                if (tgUser && tgUser.id) {
-                    setUser({
-                        id: tgUser.id,
-                        username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним'
-                    });
-                } else {
-                    // Если мы в Telegram, но не смогли получить user.id - это странно, но лучше иметь запасной вариант
-                    console.warn("In Telegram env, but user data is missing.");
-                    setUser({ id: 12345, username: 'Тестовый Игрок' });
+        if (userData) {
+            // Если пользователь есть, но у него нет кода (старый игрок)
+            if (!userData.friend_code) {
+                const { data: code, error } = await supabase.rpc('generate_friend_code');
+                if (code) {
+                    const { data: updatedUser } = await supabase.from('scores').update({ friend_code: code }).eq('user_id', tgUser.id).select().single();
+                    userData = updatedUser;
                 }
-            } else {
-                // Для тестирования в обычном браузере
-                console.log("Not in Telegram env. Using test user.");
-                setUser({ id: 12345, username: 'Тестовый Игрок' });
             }
-        };
-
-        // Иногда Telegram-объект появляется с небольшой задержкой.
-        // Мы попробуем его найти сразу, а если не получится - через 100мс.
-        if (window.Telegram && window.Telegram.WebApp) {
-            setupTelegramUser();
         } else {
-            setTimeout(setupTelegramUser, 100);
+            // Если пользователя нет, создаем его
+            const { data: code } = await supabase.rpc('generate_friend_code');
+            const { data: newUser } = await supabase.from('scores').insert({
+                user_id: tgUser.id,
+                username: tgUser.username,
+                friend_code: code
+            }).select().single();
+            userData = newUser;
         }
+        setUser(userData);
+    };
 
-    }, []);
+    const setupTelegramUser = () => {
+      if (window.Telegram && window.Telegram.WebApp) {
+        window.Telegram.WebApp.ready();
+        const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
+        if (tgUser && tgUser.id) {
+          const formattedUser = {
+            id: tgUser.id,
+            username: tgUser.username || `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() || 'Аноним'
+          };
+          initUser(formattedUser);
+        } else {
+          setUser({ id: 12345, username: 'TEST', friend_code: '111111' });
+        }
+      } else {
+        setUser({ id: 12345, username: 'TEST', friend_code: '111111' });
+      }
+    };
 
-  const startGame = () => setGameState('playing');
-  const pauseGame = () => setGameState('paused');
-  const resumeGame = () => setGameState('playing');
+    setupTelegramUser();
+  }, []);
 
-  const restartGame = () => {
-    setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
+  const checkForSabotage = async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('sabotages')
+      .select('*')
+      .eq('receiver_id', user.id)
+      .eq('is_active', true)
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error checking for sabotage:', error);
+    }
+
+    if (data) {
+      setActiveSabotage(data);
+      alert('Внимание! Вам прислали подлянку "Скользкая коробка"! Первый блок будет двигаться быстрее.');
+    } else {
+      setActiveSabotage(null);
+    }
+  };
+
+  const consumeSabotage = async () => {
+    if (!activeSabotage) return;
+    await supabase.from('sabotages').update({ is_active: false }).eq('id', activeSabotage.id);
+    setActiveSabotage(null);
+  };
+
+  const startGame = async () => {
+    await checkForSabotage();
     setGameState('playing');
   };
+
+  const restartGame = async () => {
+    setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
+    await checkForSabotage();
+    setGameState('playing');
+  };
+
+  const pauseGame = () => setGameState('paused');
+  const resumeGame = () => setGameState('playing');
 
   const goToMenu = () => {
     setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
@@ -157,54 +334,45 @@ function Game() {
   };
 
   const showLeaderboard = async () => {
-    setScores([]); // Очищаем старые результаты перед загрузкой
+    setScores([]);
     setGameState('leaderboard');
-    const { data, error } = await supabase
-      .from('scores')
-      .select('user_id, username, score')
-      .order('score', { ascending: false })
-      .limit(100);
+    const { data, error } = await supabase.from('scores').select('user_id, username, score').order('score', { ascending: false }).limit(100);
+    if (data) setScores(data);
+  };
 
-    if (data) {
-      setScores(data);
+  const showFriends = () => setGameState('friends');
+
+  const sendSabotage = async (receiverId) => {
+    if (!user) return;
+    const { error } = await supabase.from('sabotages').insert({ sender_id: user.id, receiver_id: receiverId, sabotage_type: 'slippery_box' });
+    if (error) {
+      alert('Не удалось отправить подлянку.');
+      console.error(error);
     } else {
-      console.error('Error fetching scores:', error);
+      alert(`Подлянка успешно отправлена!`);
     }
   };
 
   const gameOver = async () => {
     setGameState('gameOver');
     if (!user) return;
-
     const currentScore = blocks.length - 1;
     if (currentScore <= 0) return;
-
-    const { error } = await supabase.rpc('update_score_if_higher', {
-      new_user_id: user.id,
-      new_username: user.username,
-      new_score: currentScore
-    });
-
-    if (error) {
-      console.error('Error updating score:', error);
-    }
+    await supabase.rpc('update_score_if_higher', { new_user_id: user.id, new_username: user.username, new_score: currentScore });
   };
 
   const placeBlock = () => {
     if (clickCooldown.current || gameState !== 'playing') return;
-
     clickCooldown.current = true;
     setTimeout(() => { clickCooldown.current = false; }, 100);
 
+    if (activeSabotage) {
+      consumeSabotage();
+    }
+
     const prevBlock = blocks[blocks.length - 1];
-    const newBlock = {
-      position: activeBlockPositionRef.current.toArray(),
-      size: [...prevBlock.size],
-      color: `hsl(${blocks.length * 15}, 70%, 50%)`,
-    };
-
+    const newBlock = { position: activeBlockPositionRef.current.toArray(), size: [...prevBlock.size], color: `hsl(${blocks.length * 15}, 70%, 50%)` };
     const overlap = prevBlock.size[0] / 2 + newBlock.size[0] / 2 - Math.abs(prevBlock.position[0] - newBlock.position[0]);
-
     if (overlap <= 0) {
       gameOver();
     } else {
@@ -218,13 +386,14 @@ function Game() {
 
   const score = blocks.length - 1;
   const towerHeight = blocks.length - 0.5;
+  const blockSpeedMultiplier = (activeSabotage && activeSabotage.sabotage_type === 'slippery_box') ? 1.5 : 1;
 
   return (
     <div className="app-container">
-      {/* Условный рендеринг интерфейса */}
-      {gameState === 'menu' && <MainMenu onPlay={startGame} onShowLeaderboard={showLeaderboard} />}
+      {gameState === 'menu' && <MainMenu onPlay={startGame} onShowLeaderboard={showLeaderboard} onShowFriends={showFriends} />}
       {gameState === 'paused' && <PauseMenu onResume={resumeGame} onRestart={restartGame} onGoToMenu={goToMenu} />}
       {gameState === 'leaderboard' && <Leaderboard onBack={goToMenu} scores={scores} />}
+      {gameState === 'friends' && <FriendsPage user={user} onBack={goToMenu} onSendSabotage={sendSabotage} />}
       {gameState === 'gameOver' && (
         <div className="game-over-ui" onClick={restartGame}>
           <img src={gameOverImage} alt="Game Over" className="game-over-image" />
@@ -232,47 +401,32 @@ function Game() {
           <p>Кликните, чтобы начать заново</p>
         </div>
       )}
-
-      {/* Игровой HUD */}
       {gameState === 'playing' && (
         <>
           <div className="score-ui"><p>{score}</p></div>
           <img src={pauseButtonImage} alt="Pause" className="pause-button" onClick={pauseGame} />
         </>
       )}
-
-      {/* 3D Сцена */}
       <Canvas shadows camera={{ position: [0, 5, 8], fov: 75 }}>
         <GameCamera towerHeight={towerHeight} />
-
         <ambientLight intensity={0.6} />
-        <directionalLight
-          castShadow
-          position={[10, 20, 5]}
-          intensity={1.0}
-          shadow-mapSize-width={1024}
-          shadow-mapSize-height={1024}
-        />
-
+        <directionalLight castShadow position={[10, 20, 5]} intensity={1.0} shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
         <mesh receiveShadow position={[0, -1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[100, 100]} />
           <shadowMaterial opacity={0.3} />
         </mesh>
-
         {gameState === 'playing' && (
           <mesh onPointerDown={placeBlock} position={[0, 0, -5]}>
             <planeGeometry args={[100, 100]} />
             <meshBasicMaterial transparent opacity={0} />
           </mesh>
         )}
-
         {blocks.map((block, index) => (
           <mesh key={index} position={block.position} castShadow receiveShadow>
             <boxGeometry args={block.size} />
             <meshStandardMaterial color={block.color} />
           </mesh>
         ))}
-
         {gameState === 'playing' && (
           <Block
             position={[0, towerHeight, 0]}
@@ -280,6 +434,7 @@ function Game() {
             color="cyan"
             isActive={true}
             onPositionUpdate={(pos) => activeBlockPositionRef.current.copy(pos)}
+            speedMultiplier={blockSpeedMultiplier}
           />
         )}
       </Canvas>

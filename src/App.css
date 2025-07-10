@@ -235,3 +235,77 @@ body {
 .leaderboard-entry:last-child {
     border-bottom: none;
 }
+
+.friend-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid #444;
+}
+.friend-entry:last-child {
+    border-bottom: none;
+}
+
+.text-button.small {
+    padding: 8px 15px;
+    font-size: 0.9em;
+}
+
+.friend-section {
+  width: 100%;
+  margin-bottom: 20px;
+  border-top: 1px solid #555;
+  padding-top: 15px;
+}
+.friend-section:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.friend-section h4 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  color: #ccc;
+}
+
+.friend-code {
+  background: #222;
+  padding: 10px;
+  border-radius: 5px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.2em;
+  font-weight: bold;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px;
+}
+.input-group input {
+  flex-grow: 1;
+  background: #333;
+  border: 1px solid #555;
+  color: white;
+  padding: 8px;
+  border-radius: 5px;
+  font-size: 1em;
+}
+
+.friend-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+}
+
+.text-button.small {
+    padding: 8px 15px;
+    font-size: 0.9em;
+    margin-left: 5px;
+}
+.text-button.small.danger {
+    background: #8c3a3a;
+}
