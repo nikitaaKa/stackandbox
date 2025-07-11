@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
+import { Physics, useBox } from '@react-three/cannon';
 import './App.css';
 import * as THREE from 'three';
 import { supabase } from './supabaseClient';
@@ -27,19 +28,111 @@ function GameCamera({ towerHeight }) {
   return null;
 }
 
-function Block({ position, size, color, isActive, onPositionUpdate, speedMultiplier = 1 }) {
+function Block({ position, size, color, isActive, onPositionUpdate, speedMultiplier = 1, moveDirection = 'x' }) {
   const meshRef = useRef();
+
+  const initialX = position[0];
+  const initialZ = position[2];
+
   useFrame((state) => {
     if (isActive) {
       const time = state.clock.getElapsedTime();
-      meshRef.current.position.x = Math.sin(time * 2 * speedMultiplier) * 2.5;
+      const movement = Math.sin(time * 2 * speedMultiplier) * 3.5;
+
+      if (moveDirection === 'x') {
+        // Двигаем по X
+        meshRef.current.position.x = movement;
+        // А позицию по Z СОХРАНЯЕМ, а не сбрасываем
+        meshRef.current.position.z = initialZ;
+      } else { // moveDirection === 'z'
+        // Двигаем по Z
+        meshRef.current.position.z = movement;
+        // А позицию по X СОХРАНЯЕМ
+        meshRef.current.position.x = initialX;
+      }
+
       onPositionUpdate(meshRef.current.position);
     }
   });
+
+  // Важно: мы все еще используем проп `position` для первоначальной установки.
+  // Наша логика в useFrame начинает работать сразу после этого.
   return (
     <mesh ref={meshRef} position={position} castShadow>
       <boxGeometry args={size} />
       <meshStandardMaterial color={color} />
+    </mesh>
+  );
+}
+
+// --- ФИЗИКА И ФИЗИЧЕСКИЕ КОМПОНЕНТЫ ---
+function PhysicalBlock({ position, size, color }) {
+  // `useBox` - это хук из @react-three/cannon. Он создает физическое тело.
+  // Мы делаем его статичным, задавая массу 0.
+  const [ref] = useBox(() => ({
+    mass: 0,
+    position,
+    args: size,
+  }));
+
+  return (
+    <mesh ref={ref} castShadow receiveShadow>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color={color} />
+    </mesh>
+  );
+}
+
+function FallingScrap({ id, onRemove, position, size, color }) {
+  // --- 1. Логика физики (из первой версии) ---
+  const [ref] = useBox(() => ({
+    mass: 1, // Динамическое тело
+    position: position, // Начальная позиция
+    args: size, // Размеры коллайдера
+    restitution: 0.3, // Упругость для отскока
+    // Случайное начальное вращение
+    angularVelocity: [
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5
+    ],
+  }));
+
+  // --- 2. Логика анимации и самоудаления (из второй версии) ---
+  const materialRef = useRef();
+
+  // Мы используем ref для timeAlive, чтобы его значение сохранялось между рендерами
+  const timeAlive = useRef(0);
+
+  useFrame((state, delta) => {
+    // Прибавляем время, прошедшее с прошлого кадра
+    timeAlive.current += delta;
+
+    // После 8 секунд жизни начинаем плавно исчезать
+    if (timeAlive.current > 8 && materialRef.current.opacity > 0) {
+      // Уменьшаем прозрачность. `delta * 2` означает, что он исчезнет за 0.5 секунды.
+      materialRef.current.opacity -= delta * 2;
+    }
+
+    // Когда блок стал полностью невидимым, вызываем функцию удаления
+    // Проверяем `timeAlive > 8` чтобы onRemove не вызвался случайно в самом начале
+    if (timeAlive.current > 8 && materialRef.current.opacity <= 0) {
+      onRemove(id);
+    }
+  });
+
+  // --- 3. JSX для рендера ---
+  return (
+    <mesh ref={ref} castShadow>
+      {/* Геометрия с правильными размерами */}
+      <boxGeometry args={size} />
+      {/* Материал, которым мы можем управлять (менять прозрачность) */}
+      <meshStandardMaterial
+        ref={materialRef}
+        color={color}
+        transparent={true} // Включаем режим прозрачности
+        opacity={1}         // Начальная непрозрачность
+      />
     </mesh>
   );
 }
@@ -200,10 +293,16 @@ function Game() {
   const [activeSabotage, setActiveSabotage] = useState(null);
   const [sabotageTurn, setSabotageTurn] = useState(null);
   const [blocks, setBlocks] = useState([
-    { position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' },
+      { position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray', type: 'static' },
   ]);
+  const [scraps, setScraps] = useState([]);
   const clickCooldown = useRef(false);
   const activeBlockPositionRef = useRef(new THREE.Vector3());
+  const moveDirection = (blocks.length % 2 === 1) ? 'x' : 'z';
+
+  const removeScrap = (id) => {
+    setScraps((prevScraps) => prevScraps.filter((scrap) => scrap.id !== id));
+  };
 
   useEffect(() => {
     const loader = document.getElementById('loader');
@@ -256,7 +355,7 @@ function Game() {
     if (data && data.length > 0) {
       const sabotageData = data[0];
       setActiveSabotage(sabotageData);
-      const triggerTurn = Math.floor(Math.random() * 5) + 2;
+      const triggerTurn = Math.floor(Math.random() * 11) + 8;
       setSabotageTurn(triggerTurn);
     } else {
       setActiveSabotage(null);
@@ -322,26 +421,87 @@ function Game() {
     setTimeout(() => { clickCooldown.current = false; }, 100);
 
     if (isSabotageActiveNow) {
-        consumeSabotage();
+      consumeSabotage();
     }
 
     const prevBlock = blocks[blocks.length - 1];
-    const newBlock = { position: activeBlockPositionRef.current.toArray(), size: [...prevBlock.size], color: `hsl(${blocks.length * 15}, 70%, 50%)` };
-    const overlap = prevBlock.size[0] / 2 + newBlock.size[0] / 2 - Math.abs(prevBlock.position[0] - newBlock.position[0]);
 
-    if (overlap <= 0) {
-      gameOver();
-    } else {
-      const newWidth = overlap;
-      const newX = prevBlock.position[0] + (newBlock.position[0] - prevBlock.position[0]) / 2;
-      newBlock.size[0] = newWidth;
-      newBlock.position[0] = newX;
-      setBlocks(currentBlocks => [...currentBlocks, newBlock]);
+    const newBlock = {
+      position: activeBlockPositionRef.current.toArray(),
+      size: [...prevBlock.size], // Новый блок наследует ПОЛНЫЙ размер предыдущего
+      color: `hsl(${blocks.length * 15}, 70%, 50%)`,
+      type: 'static',
+    };
+
+    let scrap = null;
+
+    // moveDirection должен быть определен выше в компоненте Game
+    // const moveDirection = (blocks.length % 2 === 1) ? 'x' : 'z';
+
+    if (moveDirection === 'x') {
+      // --- Обрезка по оси X ---
+      const overlap = prevBlock.size[0] / 2 + newBlock.size[0] / 2 - Math.abs(prevBlock.position[0] - newBlock.position[0]);
+
+      if (overlap <= 0) {
+        gameOver();
+        setScraps(s => [...s, { ...newBlock, id: Date.now() }]);
+        return;
+      } else {
+        const finalWidth = overlap;
+        const finalX = prevBlock.position[0] + (newBlock.position[0] - prevBlock.position[0]) / 2;
+
+        // --- ЛОГИКА СОЗДАНИЯ ОБРЕЗКА ---
+        const scrapWidth = prevBlock.size[0] - finalWidth;
+        const scrapX = finalX + (finalWidth / 2 * Math.sign(newBlock.position[0] - prevBlock.position[0])) + (scrapWidth / 2 * Math.sign(newBlock.position[0] - prevBlock.position[0]));
+
+        scrap = {
+            id: Date.now(),
+            position: [scrapX, newBlock.position[1], prevBlock.position[2]],
+            size: [scrapWidth, newBlock.size[1], prevBlock.size[2]],
+            color: newBlock.color,
+        };
+
+        newBlock.size[0] = finalWidth;
+        newBlock.position[0] = finalX;
+        newBlock.position[2] = prevBlock.position[2];
+      }
+    } else { // moveDirection === 'z'
+      // --- Обрезка по оси Z ---
+      const overlap = prevBlock.size[2] / 2 + newBlock.size[2] / 2 - Math.abs(prevBlock.position[2] - newBlock.position[2]);
+
+      if (overlap <= 0) {
+        gameOver();
+        setScraps(s => [...s, { ...newBlock, id: Date.now() }]);
+        return;
+      } else {
+        const finalDepth = overlap;
+        const finalZ = prevBlock.position[2] + (newBlock.position[2] - prevBlock.position[2]) / 2;
+
+        const scrapDepth = prevBlock.size[2] - finalDepth;
+        const scrapZ = finalZ + (finalDepth / 2 * Math.sign(newBlock.position[2] - prevBlock.position[2])) + (scrapDepth / 2 * Math.sign(newBlock.position[2] - prevBlock.position[2]));
+
+        scrap = {
+            id: Date.now(),
+            position: [prevBlock.position[0], newBlock.position[1], scrapZ],
+            size: [prevBlock.size[0], newBlock.size[1], scrapDepth],
+            color: newBlock.color,
+        };
+
+        newBlock.size[2] = finalDepth;
+        newBlock.position[2] = finalZ;
+        newBlock.position[0] = prevBlock.position[0];
+      }
+    }
+
+    setBlocks(currentBlocks => [...currentBlocks, newBlock]);
+    if (scrap) {
+      setScraps(s => [...s, scrap]);
     }
   };
 
   const score = blocks.length - 1;
   const towerHeight = blocks.length - 0.5;
+  const lastPlacedBlock = blocks[blocks.length - 1];
   const blockSpeedMultiplier = isSabotageActiveNow ? 1.5 : 1;
   const activeBlockColor = isSabotageActiveNow ? '#ff4d4d' : 'cyan';
 
@@ -378,20 +538,30 @@ function Game() {
             <meshBasicMaterial transparent opacity={0} />
           </mesh>
         )}
-        {blocks.map((block, index) => (
-          <mesh key={index} position={block.position} castShadow receiveShadow>
-            <boxGeometry args={block.size} />
-            <meshStandardMaterial color={block.color} />
-          </mesh>
-        ))}
+        <Physics gravity={[0, -30, 0]}>
+          {blocks.map((block, index) => (
+            <PhysicalBlock
+              key={index}
+              position={block.position}
+              size={block.size}
+              color={block.color}
+            />
+          ))}
+          {scraps.map((scrap) => (
+            <FallingScrap key={scrap.id} id={scrap.id} onRemove={removeScrap} {...scrap} />
+          ))}
+        </Physics>
         {gameState === 'playing' && (
           <Block
-            position={[0, towerHeight, 0]}
-            size={blocks[blocks.length - 1].size}
+            // Начальная позиция теперь наследуется от центра предыдущего блока,
+            // но с новой высотой.
+            position={[lastPlacedBlock.position[0], towerHeight, lastPlacedBlock.position[2]]}
+            size={lastPlacedBlock.size}
             color={activeBlockColor}
             isActive={true}
             onPositionUpdate={(pos) => activeBlockPositionRef.current.copy(pos)}
             speedMultiplier={blockSpeedMultiplier}
+            moveDirection={moveDirection}
           />
         )}
       </Canvas>
