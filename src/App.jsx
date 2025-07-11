@@ -91,71 +91,39 @@ function Leaderboard({ onBack, scores }) {
   );
 }
 
-// src/App.jsx
-
-// ... (остальной код, MainMenu, PauseMenu и т.д.)
-
-// --- ФИНАЛЬНАЯ ВЕРСИЯ FriendsPage ---
 function FriendsPage({ user, onBack, onSendSabotage }) {
   const [friendCodeInput, setFriendCodeInput] = useState('');
   const [friendships, setFriendships] = useState({ requests: [], friends: [] });
   const [loading, setLoading] = useState(true);
 
-  // Функция для обновления всех списков
   const fetchAllFriendships = async () => {
     if (!user || !user.user_id) return;
     setLoading(true);
-
-    // Запрос на входящие заявки
-    const { data: requestsData } = await supabase
-      .from('friendships')
-      .select(`*, user1:scores!user1_id(username)`)
-      .eq('user2_id', user.user_id)
-      .eq('status', 'pending');
-
-    // Запрос на подтвержденных друзей
-    const { data: friendsData } = await supabase
-      .from('friendships')
-      .select(`*, user1:scores!user1_id(username, user_id), user2:scores!user2_id(username, user_id)`)
-      .or(`user1_id.eq.${user.user_id},user2_id.eq.${user.user_id}`)
-      .eq('status', 'accepted');
-
+    const { data: requestsData } = await supabase.from('friendships').select(`*, user1:scores!user1_id(username)`).eq('user2_id', user.user_id).eq('status', 'pending');
+    const { data: friendsData } = await supabase.from('friendships').select(`*, user1:scores!user1_id(username, user_id), user2:scores!user2_id(username, user_id)`).or(`user1_id.eq.${user.user_id},user2_id.eq.${user.user_id}`).eq('status', 'accepted');
     setFriendships({
       requests: requestsData || [],
-      // Фильтруем и преобразуем данные, чтобы получить объекты именно друзей, а не себя
       friends: (friendsData || []).map(f => (f.user1_id === user.user_id ? f.user2 : f.user1)),
     });
     setLoading(false);
   };
 
-  // Загружаем данные при монтировании компонента
   useEffect(() => {
     fetchAllFriendships();
   }, [user]);
 
   const handleAddFriend = async () => {
     if (!friendCodeInput.trim()) return;
-
-    const { data: friendData } = await supabase
-      .from('scores')
-      .select('user_id')
-      .eq('friend_code', friendCodeInput.trim().toUpperCase())
-      .single();
-
+    const { data: friendData } = await supabase.from('scores').select('user_id').eq('friend_code', friendCodeInput.trim().toUpperCase()).single();
     if (!friendData) {
       alert('Пользователь с таким кодом не найден.');
       return;
     }
-
     if (friendData.user_id === user.user_id) {
-        alert('Нельзя добавить себя в друзья.');
-        return;
+      alert('Нельзя добавить себя в друзья.');
+      return;
     }
-
-    const { error } = await supabase
-      .from('friendships')
-      .insert({ user1_id: user.user_id, user2_id: friendData.user_id, status: 'pending' });
-
+    const { error } = await supabase.from('friendships').insert({ user1_id: user.user_id, user2_id: friendData.user_id, status: 'pending' });
     if (error) {
       alert('Не удалось отправить заявку. Возможно, она уже отправлена или вы уже друзья.');
     } else {
@@ -166,15 +134,12 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
 
   const handleRequest = async (req, newStatus) => {
     await supabase.from('friendships').update({ status: newStatus }).eq('id', req.id);
-    // Обновляем списки после действия
     fetchAllFriendships();
   };
 
   const copyCodeToClipboard = () => {
     if (user?.friend_code) {
-        navigator.clipboard.writeText(user.friend_code)
-            .then(() => alert('Код скопирован!'))
-            .catch(err => console.error('Failed to copy: ', err));
+      navigator.clipboard.writeText(user.friend_code).then(() => alert('Код скопирован!')).catch(err => console.error('Failed to copy: ', err));
     }
   };
 
@@ -182,28 +147,17 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
     <div className="ui-fullscreen-menu">
       <h2>Друзья</h2>
       <div className="leaderboard-list">
-        {/* Мой код */}
         <div className="friend-section">
           <h4>Мой код дружбы (нажми, чтобы скопировать):</h4>
           <p className="friend-code" onClick={copyCodeToClipboard}>{user?.friend_code || 'Загрузка...'}</p>
         </div>
-
-        {/* Добавить друга */}
         <div className="friend-section">
           <h4>Добавить по коду:</h4>
           <div className="input-group">
-            <input
-              type="text"
-              value={friendCodeInput}
-              onChange={(e) => setFriendCodeInput(e.target.value.toUpperCase())}
-              placeholder="ABC-DEF"
-              maxLength="7"
-            />
+            <input type="text" value={friendCodeInput} onChange={(e) => setFriendCodeInput(e.target.value.toUpperCase())} placeholder="ABC-DEF" maxLength="7" />
             <button onClick={handleAddFriend} className="text-button small">Ок</button>
           </div>
         </div>
-
-        {/* Входящие заявки */}
         <div className="friend-section">
           <h4>Входящие заявки:</h4>
           {loading ? <p>Загрузка...</p> : friendships.requests.length > 0 ? (
@@ -218,11 +172,9 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
             ))
           ) : <p>Нет новых заявок.</p>}
         </div>
-
-        {/* Мои друзья */}
         <div className="friend-section">
           <h4>Мои друзья:</h4>
-           {loading ? <p>Загрузка...</p> : friendships.friends.length > 0 ? (
+          {loading ? <p>Загрузка...</p> : friendships.friends.length > 0 ? (
             friendships.friends.map(friend => (
               <div key={friend.user_id} className="friend-entry">
                 <span>{friend.username}</span>
@@ -237,6 +189,7 @@ function FriendsPage({ user, onBack, onSendSabotage }) {
   );
 }
 
+
 // --- ГЛАВНЫЙ КОМПОНЕНТ ИГРЫ ---
 
 function Game() {
@@ -245,6 +198,7 @@ function Game() {
   const [isUserLoading, setIsUserLoading] = useState(true);
   const [scores, setScores] = useState([]);
   const [activeSabotage, setActiveSabotage] = useState(null);
+  const [sabotageTurn, setSabotageTurn] = useState(null);
   const [blocks, setBlocks] = useState([
     { position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' },
   ]);
@@ -256,25 +210,25 @@ function Game() {
     if (loader) loader.classList.add('hidden');
 
     const initUser = async (tgUser) => {
-        let { data: userData } = await supabase.from('scores').select('*').eq('user_id', tgUser.id).single();
-        if (userData) {
-            if (!userData.friend_code) {
-                const { data: code } = await supabase.rpc('generate_friend_code');
-                if (code) {
-                    const { data: updatedUser } = await supabase.from('scores').update({ friend_code: code }).eq('user_id', tgUser.id).select().single();
-                    setUser(updatedUser);
-                } else {
-                    setUser(userData);
-                }
-            } else {
-                setUser(userData);
-            }
+      let { data: userData } = await supabase.from('scores').select('*').eq('user_id', tgUser.id).single();
+      if (userData) {
+        if (!userData.friend_code) {
+          const { data: code } = await supabase.rpc('generate_friend_code');
+          if (code) {
+            const { data: updatedUser } = await supabase.from('scores').update({ friend_code: code }).eq('user_id', tgUser.id).select().single();
+            setUser(updatedUser);
+          } else {
+            setUser(userData);
+          }
         } else {
-            const { data: code } = await supabase.rpc('generate_friend_code');
-            const { data: newUser } = await supabase.from('scores').insert({ user_id: tgUser.id, username: tgUser.username, friend_code: code }).select().single();
-            setUser(newUser);
+          setUser(userData);
         }
-        setIsUserLoading(false);
+      } else {
+        const { data: code } = await supabase.rpc('generate_friend_code');
+        const { data: newUser } = await supabase.from('scores').insert({ user_id: tgUser.id, username: tgUser.username, friend_code: code }).select().single();
+        setUser(newUser);
+      }
+      setIsUserLoading(false);
     };
 
     const setupTelegramUser = () => {
@@ -293,52 +247,37 @@ function Game() {
         setIsUserLoading(false);
       }
     };
-
     setupTelegramUser();
   }, []);
 
   const checkForSabotage = async () => {
-    if (!user || !user.user_id) {
-      console.log("checkForSabotage: user data not ready.");
-      return;
-    }
-
-    console.log(`checkForSabotage: Checking for user_id: ${user.user_id}`);
-
-    // --- ИЗМЕНЕНИЕ: Убираем .single() ---
-    const { data, error } = await supabase
-      .from('sabotages')
-      .select('*')
-      .eq('receiver_id', user.user_id)
-      .eq('is_active', true)
-      .limit(1); // Мы по-прежнему просим не больше одной записи для эффективности
-
-    if (error) {
-      // Теперь любая ошибка - это настоящая ошибка, а не "не найдено"
-      console.error('Error checking for sabotage:', error);
-      return; // Выходим, если произошла ошибка
-    }
-
-    // `data` теперь - это массив. Он может быть пустым [ ] или содержать один элемент [ { ... } ]
-    console.log("checkForSabotage: Received data:", data);
-
+    if (!user || !user.user_id) return;
+    const { data } = await supabase.from('sabotages').select('*').eq('receiver_id', user.user_id).eq('is_active', true).limit(1);
     if (data && data.length > 0) {
-      // Если в массиве есть хотя бы один элемент, берем первый
       const sabotageData = data[0];
       setActiveSabotage(sabotageData);
-      alert('Внимание! Вам прислали подлянку "Скользкая коробка"! Первый блок будет двигаться быстрее.');
+      const triggerTurn = Math.floor(Math.random() * 5) + 2;
+      setSabotageTurn(triggerTurn);
     } else {
-      // Если массив пустой, значит подлянок нет
       setActiveSabotage(null);
+      setSabotageTurn(null);
     }
   };
-
 
   const consumeSabotage = async () => {
     if (!activeSabotage) return;
     await supabase.from('sabotages').update({ is_active: false }).eq('id', activeSabotage.id);
     setActiveSabotage(null);
+    setSabotageTurn(null);
   };
+
+  const isSabotageActiveNow = activeSabotage && blocks.length === sabotageTurn;
+
+  useEffect(() => {
+    if (isSabotageActiveNow) {
+      consumeSabotage();
+    }
+  }, [isSabotageActiveNow]);
 
   const startGame = async () => {
     await checkForSabotage();
@@ -353,16 +292,12 @@ function Game() {
 
   const pauseGame = () => setGameState('paused');
   const resumeGame = () => setGameState('playing');
-
-  const goToMenu = () => {
-    setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]);
-    setGameState('menu');
-  };
+  const goToMenu = () => { setBlocks([{ position: [0, -0.5, 0], size: [3, 1, 3], color: 'gray' }]); setGameState('menu'); };
 
   const showLeaderboard = async () => {
     setScores([]);
     setGameState('leaderboard');
-    const { data, error } = await supabase.from('scores').select('user_id, username, score').order('score', { ascending: false }).limit(100);
+    const { data } = await supabase.from('scores').select('user_id, username, score').order('score', { ascending: false }).limit(100);
     if (data) setScores(data);
   };
 
@@ -384,7 +319,7 @@ function Game() {
     if (!user) return;
     const currentScore = blocks.length - 1;
     if (currentScore <= 0) return;
-    await supabase.rpc('update_score_if_higher', { new_user_id: user.id, new_username: user.username, new_score: currentScore });
+    await supabase.rpc('update_score_if_higher', { new_user_id: user.user_id, new_username: user.username, new_score: currentScore });
   };
 
   const placeBlock = () => {
@@ -392,13 +327,10 @@ function Game() {
     clickCooldown.current = true;
     setTimeout(() => { clickCooldown.current = false; }, 100);
 
-    if (activeSabotage) {
-      consumeSabotage();
-    }
-
     const prevBlock = blocks[blocks.length - 1];
     const newBlock = { position: activeBlockPositionRef.current.toArray(), size: [...prevBlock.size], color: `hsl(${blocks.length * 15}, 70%, 50%)` };
     const overlap = prevBlock.size[0] / 2 + newBlock.size[0] / 2 - Math.abs(prevBlock.position[0] - newBlock.position[0]);
+
     if (overlap <= 0) {
       gameOver();
     } else {
@@ -412,7 +344,8 @@ function Game() {
 
   const score = blocks.length - 1;
   const towerHeight = blocks.length - 0.5;
-  const blockSpeedMultiplier = (activeSabotage && activeSabotage.sabotage_type === 'slippery_box') ? 1.5 : 1;
+  const blockSpeedMultiplier = isSabotageActiveNow ? 1.5 : 1;
+  const activeBlockColor = isSabotageActiveNow ? '#ff4d4d' : 'cyan';
 
   return (
     <div className="app-container">
@@ -457,7 +390,7 @@ function Game() {
           <Block
             position={[0, towerHeight, 0]}
             size={blocks[blocks.length - 1].size}
-            color="cyan"
+            color={activeBlockColor}
             isActive={true}
             onPositionUpdate={(pos) => activeBlockPositionRef.current.copy(pos)}
             speedMultiplier={blockSpeedMultiplier}
