@@ -298,26 +298,41 @@ function Game() {
   }, []);
 
   const checkForSabotage = async () => {
-    if (!user || !user.user_id) return;
+    if (!user || !user.user_id) {
+      console.log("checkForSabotage: user data not ready.");
+      return;
+    }
+
+    console.log(`checkForSabotage: Checking for user_id: ${user.user_id}`);
+
+    // --- ИЗМЕНЕНИЕ: Убираем .single() ---
     const { data, error } = await supabase
       .from('sabotages')
       .select('*')
       .eq('receiver_id', user.user_id)
       .eq('is_active', true)
-      .limit(1)
-      .single();
+      .limit(1); // Мы по-прежнему просим не больше одной записи для эффективности
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
+      // Теперь любая ошибка - это настоящая ошибка, а не "не найдено"
       console.error('Error checking for sabotage:', error);
+      return; // Выходим, если произошла ошибка
     }
 
-    if (data) {
-      setActiveSabotage(data);
-      alert('Внимание! Вам прислали "Скользкую коробку"! Первый блок будет двигаться быстрее.');
+    // `data` теперь - это массив. Он может быть пустым [ ] или содержать один элемент [ { ... } ]
+    console.log("checkForSabotage: Received data:", data);
+
+    if (data && data.length > 0) {
+      // Если в массиве есть хотя бы один элемент, берем первый
+      const sabotageData = data[0];
+      setActiveSabotage(sabotageData);
+      alert('Внимание! Вам прислали подлянку "Скользкая коробка"! Первый блок будет двигаться быстрее.');
     } else {
+      // Если массив пустой, значит подлянок нет
       setActiveSabotage(null);
     }
   };
+
 
   const consumeSabotage = async () => {
     if (!activeSabotage) return;
