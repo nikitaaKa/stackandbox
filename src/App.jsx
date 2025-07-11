@@ -298,11 +298,11 @@ function Game() {
   }, []);
 
   const checkForSabotage = async () => {
-    if (!user) return;
+    if (!user || !user.user_id) return;
     const { data, error } = await supabase
       .from('sabotages')
       .select('*')
-      .eq('receiver_id', user.id)
+      .eq('receiver_id', user.user_id)
       .eq('is_active', true)
       .limit(1)
       .single();
@@ -313,7 +313,7 @@ function Game() {
 
     if (data) {
       setActiveSabotage(data);
-      alert('Внимание! Вам прислали подлянку "Скользкая коробка"! Первый блок будет двигаться быстрее.');
+      alert('Внимание! Вам прислали "Скользкую коробку"! Первый блок будет двигаться быстрее.');
     } else {
       setActiveSabotage(null);
     }
@@ -355,7 +355,7 @@ function Game() {
 
   const sendSabotage = async (receiverId) => {
     if (!user) return;
-    const { error } = await supabase.from('sabotages').insert({ sender_id: user.id, receiver_id: receiverId, sabotage_type: 'slippery_box' });
+    const { error } = await supabase.from('sabotages').insert({ sender_id: user.user_id, receiver_id: receiverId, sabotage_type: 'slippery_box' });
     if (error) {
       alert('Не удалось отправить подлянку.');
       console.error(error);
