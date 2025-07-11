@@ -273,12 +273,6 @@ function Game() {
 
   const isSabotageActiveNow = activeSabotage && blocks.length === sabotageTurn;
 
-  useEffect(() => {
-    if (isSabotageActiveNow) {
-      consumeSabotage();
-    }
-  }, [isSabotageActiveNow]);
-
   const startGame = async () => {
     await checkForSabotage();
     setGameState('playing');
@@ -326,6 +320,10 @@ function Game() {
     if (clickCooldown.current || gameState !== 'playing') return;
     clickCooldown.current = true;
     setTimeout(() => { clickCooldown.current = false; }, 100);
+
+    if (isSabotageActiveNow) {
+        consumeSabotage();
+    }
 
     const prevBlock = blocks[blocks.length - 1];
     const newBlock = { position: activeBlockPositionRef.current.toArray(), size: [...prevBlock.size], color: `hsl(${blocks.length * 15}, 70%, 50%)` };
